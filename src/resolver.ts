@@ -1,5 +1,6 @@
 import type { DIDDocument, DIDResolutionResult, DIDResolver, ParsedDID } from 'did-resolver'
 import { isPrivateHost } from './address-policy.js'
+import { assertValidDidDocument, InvalidDidDocument } from './document.js'
 
 const DOC_PATH = '/.well-known/did.json'
 
@@ -52,6 +53,7 @@ class ResolutionFailure extends Error {
 }
 
 export { isGlobalUnicastAddress, isPrivateHost, parseIpAddress } from './address-policy.js'
+export { assertValidDidDocument, InvalidDidDocument } from './document.js'
 export type { ParsedAddress } from './address-policy.js'
 
 function checkDestination(url: URL, allowPrivateHosts: boolean): void {
@@ -117,7 +119,11 @@ async function get(url: string, options: Settled): Promise<unknown> {
       checkDestination(current, options.allowPrivateHosts)
       let res: Response
       try {
-        res = await options.fetch(current.toString(), { redirect: 'manual', signal: controller.signal })
+        // Called unbound: as `options.fetch(...)` the platform fetch receives
+        // `options` as `this`, which Cloudflare Workers reject with
+        // "Illegal invocation" (Node does not care).
+        const doFetch = options.fetch
+        res = await doFetch(current.toString(), { redirect: 'manual', signal: controller.signal })
       } catch (error) {
         if (controller.signal.aborted) {
           throw new ResolutionFailure('timeout', `fetch timed out after ${options.timeoutMs} ms`)
@@ -192,7 +198,23 @@ export function getResolver(options: WebResolverOptions = {}): Record<string, DI
       const docIdMatchesDid = didDocument?.id === did
       if (!docIdMatchesDid) {
         err = 'resolver_error: DID document id does not match requested did'
-        // break // uncomment this when adding more checks
+        break
+      }
+
+      // ThisDID fork: an id match is not enough — the retrieved JSON must also
+      // BE a DID document. A structural violation is reported as
+      // invalidDidDocument, distinct from an absent one.
+      try {
+        assertValidDidDocument(didDocument, did)
+      } catch (error) {
+        if (error instanceof InvalidDidDocument) {
+          return {
+            didDocument: null,
+            didDocumentMetadata,
+            didResolutionMetadata: { error: 'invalidDidDocument', message: `resolver_error: ${error.message}` },
+          }
+        }
+        throw error
       }
       // eslint-disable-next-line no-constant-condition
     } while (false)
@@ -201,8 +223,11 @@ export function getResolver(options: WebResolverOptions = {}): Record<string, DI
       typeof didDocument?.['@context'] !== 'undefined' ? 'application/did+ld+json' : 'application/did+json'
 
     if (err) {
+      // ThisDID fork: DID Resolution requires no document on failure; upstream
+      // returned the retrieved document (belonging to some other DID on an id
+      // mismatch) alongside the error.
       return {
-        didDocument,
+        didDocument: null,
         didDocumentMetadata,
         didResolutionMetadata: {
           error: 'notFound',

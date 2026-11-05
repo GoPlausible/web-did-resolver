@@ -16,12 +16,13 @@ describe('web did resolver', () => {
   const validResponse: DIDDocument = {
     '@context': 'https://www.w3.org/ns/did/v1',
     id: did,
-    publicKey: [
+    // ThisDID fork: DID Core form (the original used the deprecated `publicKey` and `ethereumAddress`)
+    verificationMethod: [
       {
         id: `${did}#owner`,
         type: 'EcdsaSecp256k1RecoveryMethod2020',
         controller: did,
-        ethereumAddress: identity,
+        blockchainAccountId: `eip155:1:${identity}`,
       },
     ],
     authentication: [`${did}#owner`],
@@ -38,6 +39,25 @@ describe('web did resolver', () => {
 
   afterEach(() => {
     fetchMock.mockReset()
+  })
+
+  it('calls fetch without a receiver, as Cloudflare Workers require', async () => {
+    // workerd throws "Illegal invocation" when the platform fetch is called
+    // as a method of another object; this stand-in does the same.
+    const strictFetch = vi.fn(function (this: unknown, _input: RequestInfo | URL, _init?: RequestInit) {
+      if (this !== undefined && this !== globalThis) {
+        return Promise.reject(new TypeError('Illegal invocation: function called with incorrect `this` reference'))
+      }
+      return Promise.resolve(json(validResponse))
+    })
+    vi.stubGlobal('fetch', strictFetch)
+    try {
+      const result = await new Resolver(getResolver()).resolve(did)
+      expect(result.didResolutionMetadata.error).toBeUndefined()
+      expect(result.didDocument?.id).toBe(did)
+    } finally {
+      vi.stubGlobal('fetch', fetchMock)
+    }
   })
 
   it('resolves document', async () => {
