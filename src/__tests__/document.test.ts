@@ -216,12 +216,12 @@ describe('key material validation', () => {
   }
 
   it('accepts real EC, OKP and RSA public JWKs and Multikeys', async () => {
-    const { p256 } = await import('@noble/curves/p256')
-    const { ed25519 } = await import('@noble/curves/ed25519')
-    const ec = p256.getPublicKey(p256.utils.randomPrivateKey(), false)
+    const { p256 } = await import('@noble/curves/nist.js')
+    const { ed25519 } = await import('@noble/curves/ed25519.js')
+    const ec = p256.getPublicKey(p256.utils.randomSecretKey(), false)
     ok({ publicKeyJwk: { kty: 'EC', crv: 'P-256', x: b64u(ec.slice(1, 33)), y: b64u(ec.slice(33)) } })
     ok({
-      publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: b64u(ed25519.getPublicKey(ed25519.utils.randomPrivateKey())) },
+      publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: b64u(ed25519.getPublicKey(ed25519.utils.randomSecretKey())) },
     })
     const n = new Uint8Array(256).fill(0x9b)
     ok({ publicKeyJwk: { kty: 'RSA', n: b64u(n), e: 'AQAB' } })
@@ -282,8 +282,8 @@ describe('key material validation', () => {
   })
 
   it('refuses Multikeys whose multicodec varint is unterminated, non-minimal or bare (R8.2)', async () => {
-    const { ed25519 } = await import('@noble/curves/ed25519')
-    const key = Array.from(ed25519.getPublicKey(ed25519.utils.randomPrivateKey()))
+    const { ed25519 } = await import('@noble/curves/ed25519.js')
+    const key = Array.from(ed25519.getPublicKey(ed25519.utils.randomSecretKey()))
     ok({ publicKeyMultibase: multibase([0xed, 0x01, ...key]) })
     bad({ publicKeyMultibase: multibase([0xed, 0x81, 0x80, 0x80, 0x80, ...key]) }, 'varint does not terminate')
     bad({ publicKeyMultibase: multibase([0x80, 0x80, 0x80, 0x80, 0x80]) }, 'varint does not terminate')

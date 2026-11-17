@@ -6,29 +6,27 @@
  * decodes to a valid key. Private members are refused. RSA moduli are checked
  * for encoding and size only (primality is out of reach here).
  */
-import { ed25519 } from '@noble/curves/ed25519'
-import { p256 } from '@noble/curves/p256'
-import { p384 } from '@noble/curves/p384'
-import { p521 } from '@noble/curves/p521'
-import { secp256k1 } from '@noble/curves/secp256k1'
+import { ed25519 } from '@noble/curves/ed25519.js'
+import { p256, p384, p521 } from '@noble/curves/nist.js'
+import { secp256k1 } from '@noble/curves/secp256k1.js'
 
-type PointDecoder = { fromHex(bytes: Uint8Array): unknown }
+type PointDecoder = { fromBytes(bytes: Uint8Array): unknown }
 
 const EC_CURVES: Record<string, { point: PointDecoder; size: number }> = {
-  'P-256': { point: p256.ProjectivePoint, size: 32 },
-  'P-384': { point: p384.ProjectivePoint, size: 48 },
-  'P-521': { point: p521.ProjectivePoint, size: 66 },
-  secp256k1: { point: secp256k1.ProjectivePoint, size: 32 },
+  'P-256': { point: p256.Point, size: 32 },
+  'P-384': { point: p384.Point, size: 48 },
+  'P-521': { point: p521.Point, size: 66 },
+  secp256k1: { point: secp256k1.Point, size: 32 },
 }
 
 /** Multicodec → key length and, where this validator can, a point decoder. */
 const MULTICODECS: Record<number, { name: string; length: number; point?: PointDecoder }> = {
-  0xed: { name: 'ed25519', length: 32, point: ed25519.ExtendedPoint },
+  0xed: { name: 'ed25519', length: 32, point: ed25519.Point },
   0xec: { name: 'x25519', length: 32 },
-  0xe7: { name: 'secp256k1', length: 33, point: secp256k1.ProjectivePoint },
-  0x1200: { name: 'p256', length: 33, point: p256.ProjectivePoint },
-  0x1201: { name: 'p384', length: 49, point: p384.ProjectivePoint },
-  0x1202: { name: 'p521', length: 67, point: p521.ProjectivePoint },
+  0xe7: { name: 'secp256k1', length: 33, point: secp256k1.Point },
+  0x1200: { name: 'p256', length: 33, point: p256.Point },
+  0x1201: { name: 'p384', length: 49, point: p384.Point },
+  0x1202: { name: 'p521', length: 67, point: p521.Point },
   0xeb: { name: 'bls12_381-g2', length: 96 },
 }
 
@@ -85,7 +83,7 @@ export function base58Decode(text: string): Uint8Array | null {
 function onCurve(point: PointDecoder | undefined, bytes: Uint8Array): boolean {
   if (!point) return true
   try {
-    point.fromHex(bytes)
+    point.fromBytes(bytes)
     return true
   } catch {
     return false
@@ -117,7 +115,7 @@ export function jwkProblem(jwk: unknown): string | null {
       if (crv !== 'Ed25519' && crv !== 'X25519') return `publicKeyJwk.crv '${crv}' is not a supported OKP curve`
       const x = base64urlDecode(jwk.x)
       if (!x || x.length !== 32) return `publicKeyJwk.x must be base64url of 32 bytes for ${crv}`
-      if (crv === 'Ed25519' && !onCurve(ed25519.ExtendedPoint, x)) return 'publicKeyJwk is not a point on Ed25519'
+      if (crv === 'Ed25519' && !onCurve(ed25519.Point, x)) return 'publicKeyJwk is not a point on Ed25519'
       return null
     }
     case 'RSA': {
